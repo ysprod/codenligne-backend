@@ -1,0 +1,22 @@
+# Enforce LF line endings in repository
+* text=auto
+# Force LF for common text file types
+*.ts text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.env text eol=lf
+*.sh text eol=lf
+*.graphql text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+
+# Ensure merge drivers don't change line endings
+.gitattributes text=auto
