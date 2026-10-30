@@ -17,6 +17,7 @@ import { RedisModule } from './redis/redis.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { QuizzesModule } from 'quizzes/quizzes.module';
 import { AuditModule } from 'audit/audit.module';
+import { UploadsModule } from 'uploads/uploads.module';
 
 @Module({
   imports: [
@@ -60,7 +61,8 @@ import { AuditModule } from 'audit/audit.module';
     AccessModule,  // Gestion des accès (activation, blocage, etc.)
     CoursesModule, // Thèmes, Chapitres, Leçons
     QuizzesModule, // Quizz
-    AuditModule    // Audit
+    AuditModule,    // Audit
+    UploadsModule,
   ],
   controllers: [AppController],
   providers: [
@@ -76,4 +78,4 @@ import { AuditModule } from 'audit/audit.module';
     },
   ],
 })
-export class AppModule {}
+export class AppModule { }

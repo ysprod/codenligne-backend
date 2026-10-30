@@ -11,11 +11,12 @@ export class QuestionSnapshot {
   correctOptionIndex?: number;
   correctOptionIndexes?: number[];
   explanation?: string;
+  // 👇 AJOUT IMPORTANT pour le rapport par thème
+  themeId?: string; 
 }
 
 export class AttemptAnswer {
   questionId!: string;
-  // 👇 On stocke un tableau pour gérer les deux types (1 seul ou plusieurs)
   selectedOptionIndexes!: number[];
 }
 
@@ -51,11 +52,8 @@ export class Attempt {
   @Prop({ type: Date })
   startedAt!: Date;
 
-   // 👇 Date d'échéance stockée en base
   @Prop({ type: Date })
   expiresAt?: Date;
-
- 
 
   @Prop({ type: Date })
   finalizedAt?: Date;

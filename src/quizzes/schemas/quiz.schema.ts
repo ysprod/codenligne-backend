@@ -12,18 +12,15 @@ export class Quiz {
   @Prop()
   description?: string;
 
-  // Mode : 'TRAINING' (entraînement) ou 'EVALUATION' (évaluation)
   @Prop({ required: true, enum: ['TRAINING', 'EVALUATION'], default: 'TRAINING' })
   mode!: string;
 
-   // 👇 Durée en secondes (facultative)
+  @Prop({ required: true, default: 20 })
+  passThreshold!: number;
+
   @Prop({ type: Number })
   durationSec?: number;
 
-  @Prop({ required: true, default: 20 }) // Note sur 20
-  passThreshold!: number;
-
-  // Liste des questions associées
   @Prop({ type: [{ type: Types.ObjectId, ref: 'Question' }] })
   questionIds!: Types.ObjectId[];
 

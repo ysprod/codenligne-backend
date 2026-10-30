@@ -22,9 +22,8 @@ export class Question {
   correctOptionIndexes!: number[];
 
   @Prop({ required: true })
-  explanation!: string; // Obligatoire (CDC §7)
+  explanation!: string;
 
-  // 👇 Nouveaux champs CDC §7
   @Prop({ type: Types.ObjectId, ref: 'Theme' })
   themeId?: Types.ObjectId;
 
@@ -32,10 +31,10 @@ export class Question {
   difficulty!: 'EASY' | 'MEDIUM' | 'HARD';
 
   @Prop()
-  illustration?: string; // URL facultative
+  illustration?: string;
 
   @Prop()
-  pedagogicalRef?: string; // Source
+  pedagogicalRef?: string;
 
   @Prop({ type: String, enum: ContentStatus, default: ContentStatus.PUBLISHED })
   status!: ContentStatus;

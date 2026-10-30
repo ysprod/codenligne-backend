@@ -12,6 +12,9 @@ import { Attempt, AttemptDocument } from './schemas/attempt.schema';
 import { Question, QuestionDocument } from './schemas/question.schema';
 import { Quiz, QuizDocument } from './schemas/quiz.schema';
 import { QuestionVersion, QuestionVersionDocument } from './schemas/question-version.schema';
+import { Theme, ThemeDocument } from '../courses/schemas/theme.schema';
+import { Lesson, LessonDocument } from '../courses/schemas/lesson.schema';
+import { Progress, ProgressDocument } from '../courses/schemas/progress.schema';
 
 @Controller('quizzes')
 @UseGuards(JwtAuthGuard, RolesGuard, AccessGuard)
@@ -20,8 +23,10 @@ export class QuizzesController {
     @InjectModel(Question.name) private questionModel: Model<QuestionDocument>,
     @InjectModel(Quiz.name) private quizModel: Model<QuizDocument>,
     @InjectModel(Attempt.name) private attemptModel: Model<AttemptDocument>,
-    @InjectModel(QuestionVersion.name) private questionVersionModel: Model<QuestionVersionDocument>, // 👈 Ajout
-
+    @InjectModel(QuestionVersion.name) private questionVersionModel: Model<QuestionVersionDocument>,
+    @InjectModel(Theme.name) private themeModel: Model<ThemeDocument>,
+    @InjectModel(Lesson.name) private lessonModel: Model<LessonDocument>,
+    @InjectModel(Progress.name) private progressModel: Model<ProgressDocument>,
   ) { }
 
   // ─── Banque de questions ──────────────────────────────────
@@ -54,28 +59,21 @@ export class QuizzesController {
   async createQuizAuto(@Body() body: any) {
     const { title, mode, passThreshold, durationSec, rules } = body;
 
-    // rules = { questionCount, themeId?, difficulty? }
-
-    // 1. Construire le filtre selon les règles
     const filter: any = { status: 'PUBLISHED' };
     if (rules.themeId) filter.themeId = new Types.ObjectId(rules.themeId);
     if (rules.difficulty) filter.difficulty = rules.difficulty;
 
-    // 2. Récupérer les questions disponibles
     const availableQuestions = await this.questionModel.find(filter).exec();
 
-    // 3. Vérifier qu'il y a assez de questions
     if (availableQuestions.length < rules.questionCount) {
       throw new BadRequestException(
         `Pas assez de questions disponibles. Demandé : ${rules.questionCount}, trouvé : ${availableQuestions.length}.`
       );
     }
 
-    // 4. Mélanger les questions et en prendre le nombre demandé (sans doublon)
     const shuffled = availableQuestions.sort(() => 0.5 - Math.random());
     const selectedQuestions = shuffled.slice(0, rules.questionCount);
 
-    // 5. Créer le QCM
     const quiz = await this.quizModel.create({
       title,
       mode,
@@ -151,6 +149,7 @@ export class QuizzesController {
       correctOptionIndex: q.correctOptionIndex,
       correctOptionIndexes: q.correctOptionIndexes,
       explanation: q.explanation,
+      themeId: q.themeId?.toString(), // 👈 LIGNE CRUCIALE AJOUTÉE ICI
     }));
 
     let expiresAt = undefined;
@@ -201,14 +200,13 @@ export class QuizzesController {
     return this.finalizeAttempt(attempt, body.answers);
   }
 
-  // 👇 Nouvelle route : Modifier une question (avec versioning)
+  // ─── Modifier une question (avec versioning) ────────────────
   @Put('questions/:id')
   @Roles(Role.ADMIN, Role.SUPER_ADMIN, Role.PEDAGOGICAL_MANAGER)
   async updateQuestion(@Param('id') id: string, @Body() body: any) {
     const question = await this.questionModel.findById(id).exec();
     if (!question) throw new NotFoundException('Question introuvable');
 
-    // 1. Sauvegarder l'ancienne version dans l'historique
     const versionCount = await this.questionVersionModel.countDocuments({ questionId: question._id });
 
     await this.questionVersionModel.create({
@@ -218,7 +216,6 @@ export class QuizzesController {
       status: 'ARCHIVED',
     });
 
-    // 2. Mettre à jour la question avec les nouvelles données
     const updated = await this.questionModel.findByIdAndUpdate(
       id,
       {
@@ -229,6 +226,7 @@ export class QuizzesController {
         correctOptionIndexes: body.type === 'MULTIPLE' ? body.correctOptionIndexes : [],
         explanation: body.explanation,
         difficulty: body.difficulty,
+        illustration: body.illustration,
       },
       { new: true }
     ).exec();
@@ -296,6 +294,7 @@ export class QuizzesController {
     };
   }
 
+  // ─── Statistiques Apprenant ──────────────────────────────
   @Get('learner/stats')
   async getLearnerStats(@CurrentUser() user: UserDocument) {
     const attempts = await this.attemptModel.find({ userId: user._id, status: 'COMPLETED' }).sort({ finalizedAt: -1 }).exec();
@@ -324,9 +323,13 @@ export class QuizzesController {
     };
   }
 
+  // ─── Rapport PDF (Complet) ────────────────────────────────
   @Get('learner/report')
   async getLearnerReport(@CurrentUser() user: UserDocument) {
-    const attempts = await this.attemptModel.find({ userId: user._id, status: 'COMPLETED' }).sort({ finalizedAt: -1 }).exec();
+    const attempts = await this.attemptModel.find({
+      userId: user._id,
+      status: 'COMPLETED',
+    }).sort({ finalizedAt: -1 }).exec();
 
     const count = attempts.length;
     let averageScore = null;
@@ -341,10 +344,74 @@ export class QuizzesController {
       lastScore = Number(scores[0].toFixed(2));
     }
 
+    const themeStats: Record<string, { total: number; correct: number }> = {};
+
+    for (const attempt of attempts) {
+      for (const q of attempt.drawSnapshot) {
+        if (!q.themeId) continue;
+        
+        const themeId = q.themeId;
+        if (!themeStats[themeId]) {
+          themeStats[themeId] = { total: 0, correct: 0 };
+        }
+
+        const userAnswer = attempt.answers.find((a) => a.questionId === q.questionId);
+        const selected = userAnswer?.selectedOptionIndexes || [];
+        
+        let isCorrect = false;
+        if (q.type === 'SINGLE') {
+          isCorrect = selected.length === 1 && selected[0] === q.correctOptionIndex;
+        } else {
+          const corrects = q.correctOptionIndexes || [];
+          if (selected.length === corrects.length) {
+            isCorrect = selected.every((idx: number) => corrects.includes(idx));
+          }
+        }
+
+        themeStats[themeId].total += 1;
+        if (isCorrect) {
+          themeStats[themeId].correct += 1;
+        }
+      }
+    }
+
+    const themeIds = Object.keys(themeStats);
+    const themes = await this.themeModel.find({ _id: { $in: themeIds } }).exec();
+    
+    const resultsByTheme = themes.map((theme) => {
+      const stat = themeStats[theme._id.toString()];
+      const rate = stat.total > 0 ? (stat.correct / stat.total) * 100 : 0;
+      return {
+        themeId: theme._id,
+        themeTitle: theme.title,
+        totalQuestions: stat.total,
+        correctAnswers: stat.correct,
+        successRate: Math.round(rate),
+      };
+    });
+
+    const totalLessons = await this.lessonModel.countDocuments({ status: 'PUBLISHED' });
+    const completedLessons = await this.progressModel.countDocuments({ userId: user._id });
+
     return {
-      user: { firstName: user.firstName, lastName: user.lastName, username: user.username, phone: user.phone },
+      user: {
+        firstName: user.firstName,
+        lastName: user.lastName,
+        username: user.username,
+        phone: user.phone,
+      },
       generatedAt: new Date().toISOString(),
-      stats: { count, averageScore, bestScore, lastScore },
+      stats: {
+        count,
+        averageScore,
+        bestScore,
+        lastScore,
+      },
+      courseProgress: {
+        totalLessons,
+        completedLessons,
+      },
+      resultsByTheme,
       history: attempts.map((a) => ({
         _id: a._id,
         score20: a.score20,
